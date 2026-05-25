@@ -15,7 +15,7 @@ h1{margin:0;font-size:clamp(28px,4vw,38px);letter-spacing:-.05em}.subtitle{color
 .toolbar{display:grid;grid-template-columns:1fr 220px auto;gap:10px;margin-bottom:17px}
 .input,.select,.textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card-2);padding:12px 13px;color:var(--ink);outline:none;color-scheme:dark}
 .input::placeholder,.textarea::placeholder{color:#71857d}.input:focus,.select:focus,.textarea:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(36,177,132,.14)}
-.nav{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:18px}.nav button{padding:11px 7px;border-radius:999px;background:var(--card);border:1px solid var(--line);color:var(--muted);font-weight:700;white-space:nowrap}.nav button.active{background:var(--green-bg);color:#a7efd7;border-color:#276451}
+.nav{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}.nav button{padding:11px 14px;border-radius:999px;background:var(--card);border:1px solid var(--line);color:var(--muted);font-weight:700;white-space:nowrap}.nav button.active{background:var(--green-bg);color:#a7efd7;border-color:#276451}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
 .stat{padding:16px;border-radius:17px;background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow)}
 .stat-label{color:var(--muted);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}.stat-number{font-size:32px;font-weight:750;margin-top:6px}.stat.alert .stat-number{color:var(--red)}.stat.today .stat-number{color:var(--green)}
@@ -44,7 +44,7 @@ h1{margin:0;font-size:clamp(28px,4vw,38px);letter-spacing:-.05em}.subtitle{color
 .manage-row{border:1px solid var(--line);padding:12px;border-radius:14px;margin-bottom:8px;display:flex;justify-content:space-between;gap:10px;align-items:center}.manage-row .title{font-size:14px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;background:#193c32;color:#dcfff3;border:1px solid #28644f;padding:11px 16px;border-radius:12px;font-size:14px;display:none;z-index:30}.toast.show{display:block}
 @media(max-width:820px){.stats{grid-template-columns:repeat(2,1fr)}.layout{grid-template-columns:1fr}.side{display:none}.toolbar{grid-template-columns:1fr 150px}.toolbar .primary,.toolbar .manage-mobile{grid-column:1/-1}.manage-mobile{display:block}.fab{display:block}}
-@media(max-width:500px){.app{padding:14px 12px 92px}.top{margin-bottom:16px}.date{display:none}.panel{padding:13px}.grid{grid-template-columns:1fr}.task{padding:11px 9px}.actions .icon.defer{display:none}}
+@media(max-width:500px){.app{padding:14px 12px 92px}.top{margin-bottom:16px}.date{display:none}.panel{padding:13px}.grid{grid-template-columns:1fr}.task{padding:11px 9px}.actions .icon.defer{display:none}.nav button{padding:10px 12px;font-size:14px}}
 </style>
 </head>
 <body>
@@ -78,14 +78,17 @@ h1{margin:0;font-size:clamp(28px,4vw,38px);letter-spacing:-.05em}.subtitle{color
   <form class="modal" id="taskForm" onsubmit="saveTask(event)">
     <div class="modal-head"><h2 id="taskModalTitle">Nueva tarea</h2><button type="button" class="close" onclick="closeModal('taskOverlay')">&times;</button></div>
     <input type="hidden" id="taskId">
+    <input type="hidden" id="taskKind">
+    <input type="hidden" id="routineBase">
+    <input type="hidden" id="routineProject">
     <div class="grid">
       <label class="field full"><span class="label">¿Qué necesitas resolver?</span><input class="input" id="taskTitle" required placeholder="Ej. Enviar reporte del cliente"></label>
       <label class="field"><span class="label">Proyecto</span><select class="select" id="taskProject"></select></label>
       <label class="field"><span class="label">Fecha límite</span><input class="input" id="taskDue" type="date" required></label>
       <label class="field"><span class="label">Prioridad</span><select class="select" id="taskPriority"><option value="high">Alta</option><option value="medium" selected>Media</option><option value="low">Normal</option></select></label>
-      <label class="field"><span class="label">Repetición</span><select class="select" id="taskRepeat"><option value="none">Una vez</option><option value="daily">Diaria</option><option value="weekly">Semanal</option><option value="monthly">Mensual</option></select></label>
+      <label class="field"><span class="label">Repetición</span><select class="select" id="taskRepeat"><option value="none">Una vez</option><option value="daily">Diaria</option><option value="weekly">Semanal</option><option value="monthly">Mensual</option><option value="quarterly">Trimestral</option><option value="semiannual">Semestral</option></select></label>
       <label class="field full"><span class="label">Nota o siguiente paso</span><textarea class="textarea" id="taskNotes" placeholder="Dato, enlace, persona a confirmar..."></textarea></label>
-      <div class="field full" style="color:var(--muted);font-size:12px">Cada tarea pertenece solo al proyecto elegido. Eliminarla no afecta tareas de otros proyectos.</div>
+      <div class="field full" id="taskHint" style="color:var(--muted);font-size:12px">Cada tarea pertenece solo al proyecto elegido. Eliminarla no afecta tareas de otros proyectos.</div>
     </div>
     <div class="modal-actions"><button type="button" class="secondary" onclick="closeModal('taskOverlay')">Cancelar</button><button class="primary">Guardar</button></div>
   </form>
@@ -153,7 +156,7 @@ if(project !== 'Todos' && !PROJECTS.includes(project)) project = 'Global';
 const today = start(new Date());
 
 function loadDb(){
-  let base = {tasks:[],done:{},deferred:{},hidden:[],migrated:false,hiddenVersion:0,alerts:false,lastAlert:''};
+  let base = {tasks:[],done:{},deferred:{},hidden:[],routines:{},migrated:false,hiddenVersion:0,alerts:false,lastAlert:''};
   try{ base = {...base,...JSON.parse(localStorage.getItem(DB_KEY) || '{}')}; }catch(e){}
   if(!base.migrated){
     let legacy = [];
@@ -199,6 +202,7 @@ function monday(){
   const d=start(today), day=(d.getDay()+6)%7;
   return add(d,-day);
 }
+function routineKey(id,p){ return `${id}|${p}`; }
 function legacyKey(prefix, date, p){ 
   if(prefix === 'wd'){
     const jan = new Date(date.getFullYear(),0,1);
@@ -222,38 +226,56 @@ function templates(){
   GLOBAL_MONTH.forEach(t=>items.push(system(t[0],t[1],'Global',monthDue(t[2]),'monthly')));
   GLOBAL_QUARTER.forEach(t=>items.push(system(t[0],t[1],'Global',quarterDue(t[2]),'quarterly')));
   GLOBAL_SEMI.forEach(t=>items.push(system(t[0],t[1],'Global',semiDue(),'semiannual')));
-  return items.filter(t=>!db.hidden.includes(hideKey(t.baseId,t.project)));
+  return items.filter(t=>!db.hidden.includes(hideKey(t.baseId,t.project))).map(applyRoutineEdit);
 }
 function monthDue(day){ return iso(new Date(today.getFullYear(),today.getMonth(),Math.min(day,new Date(today.getFullYear(),today.getMonth()+1,0).getDate()))); }
 function quarterDue(day){
   const periodMonth=Math.floor(today.getMonth()/3)*3;
   return iso(new Date(today.getFullYear(),periodMonth,Math.min(day,new Date(today.getFullYear(),periodMonth+1,0).getDate())));
 }
-function semiDue(){
-  const month=today.getMonth()<6?0:7;
-  return iso(new Date(today.getFullYear(),month,15));
+function semiDue(month,day=15){
+  const defaultMonth=today.getMonth()<6?0:7;
+  const candidate=typeof month==='number' && (month<6)===(today.getMonth()<6) ? month : defaultMonth;
+  return iso(new Date(today.getFullYear(),candidate,Math.min(day,new Date(today.getFullYear(),candidate+1,0).getDate())));
 }
 function system(id,title,p,due,repeat){ return {id:`system:${id}:${p}:${due}`,baseId:id,title,project:p,due,repeat,priority:'medium',system:true}; }
+function applyRoutineEdit(task){
+  const edit=db.routines[routineKey(task.baseId,task.project)];
+  if(!edit) return task;
+  let due=task.due;
+  if(task.repeat==='weekly' && Number.isInteger(edit.weekday)) due=iso(add(monday(),(edit.weekday+6)%7));
+  if(task.repeat==='monthly' && edit.day) due=monthDue(edit.day);
+  if(task.repeat==='quarterly' && edit.day) due=quarterDue(edit.day);
+  if(task.repeat==='semiannual' && edit.day) due=semiDue(edit.month,edit.day);
+  return {...task,title:edit.title || task.title,priority:edit.priority || task.priority,notes:edit.notes || '',due,edited:true};
+}
 function customInstances(){
   return db.tasks.flatMap(t=>{
     if(t.repeat === 'none') return [{...t}];
     let output=[], cursor=parseDate(t.due), end=add(today,14), anchor=cursor.getDate();
     while(cursor < add(today,-31)){
-      if(t.repeat === 'daily') cursor=add(cursor,1);
-      if(t.repeat === 'weekly') cursor=add(cursor,7);
-      if(t.repeat === 'monthly') cursor=advanceMonth(cursor,anchor);
+      cursor=advanceRepeat(cursor,t.repeat,anchor);
     }
     while(cursor <= end){
       output.push({...t,id:`${t.id}:${iso(cursor)}`,baseId:t.id,due:iso(cursor)});
-      if(t.repeat === 'daily') cursor=add(cursor,1);
-      if(t.repeat === 'weekly') cursor=add(cursor,7);
-      if(t.repeat === 'monthly') cursor=advanceMonth(cursor,anchor);
+      cursor=advanceRepeat(cursor,t.repeat,anchor);
     }
     return output;
   });
 }
+function advanceRepeat(date,repeat,anchor){
+  if(repeat==='daily') return add(date,1);
+  if(repeat==='weekly') return add(date,7);
+  if(repeat==='monthly') return advanceMonth(date,anchor);
+  if(repeat==='quarterly') return advanceMonths(date,3,anchor);
+  if(repeat==='semiannual') return advanceMonths(date,6,anchor);
+  return add(date,3650);
+}
 function advanceMonth(date,anchor){
-  const next=new Date(date.getFullYear(),date.getMonth()+1,1);
+  return advanceMonths(date,1,anchor);
+}
+function advanceMonths(date,months,anchor){
+  const next=new Date(date.getFullYear(),date.getMonth()+months,1);
   next.setDate(Math.min(anchor,new Date(next.getFullYear(),next.getMonth()+1,0).getDate()));
   return next;
 }
@@ -323,7 +345,10 @@ function render(){
   ].map(s=>`<div class="stat ${s[2]}"><div class="stat-label">${s[0]}</div><div class="stat-number">${s[1]}</div></div>`).join('');
   document.getElementById('sideSummary').innerHTML=`<div class="mini-row"><span>Vista actual</span><strong>${esc(project)}</strong></div><div class="mini-row"><span>Cumplimiento al día</span><strong>${completion}%</strong></div><div class="meter"><div class="meter-track"><div class="meter-fill" style="width:${completion}%"></div></div><div class="meter-copy">${completedDue} de ${due.length} tareas exigibles realizadas</div></div><div class="mini-row"><span>Prioridad alta abierta</span><strong>${open.filter(t=>t.priority==='high').length}</strong></div><div class="mini-row"><span>Tareas personales</span><strong>${db.tasks.filter(t=>project==='Todos'||t.project===project).length}</strong></div>`;
   if(view==='today') renderToday(late,now,soon,items.filter(t=>t.done && diff(t.due)===0));
-  if(view==='week') renderWeek(open);
+  if(view==='weekly') renderCycle('Semanal',items,['weekly','flexible']);
+  if(view==='monthly') renderCycle('Mensual',items,['monthly']);
+  if(view==='quarterly') renderCycle('Trimestral',items,['quarterly']);
+  if(view==='semiannual') renderCycle('Semestral',items,['semiannual']);
   if(view==='all') renderList('Todas las tareas',items);
   if(view==='done') renderList('Completadas',items.filter(t=>t.done));
 }
@@ -354,7 +379,7 @@ function renderHeader(){
   document.getElementById('date').innerHTML=`<strong>${new Intl.DateTimeFormat('es-GT',{weekday:'long'}).format(today)}</strong>${new Intl.DateTimeFormat('es-GT',{day:'numeric',month:'long',year:'numeric'}).format(today)}`;
   document.getElementById('projectFilter').innerHTML=['Todos',...PROJECTS].map(p=>`<option ${p===project?'selected':''}>${esc(p)}</option>`).join('');
   document.getElementById('taskProject').innerHTML=PROJECTS.map(p=>`<option>${esc(p)}</option>`).join('');
-  const tabs=[['today','Hoy'],['week','7 días'],['all','Todo'],['done','Hechas']];
+  const tabs=[['today','Hoy'],['weekly','Semanal'],['monthly','Mensual'],['quarterly','Trimestral'],['semiannual','Semestral'],['all','Todo'],['done','Hechas']];
   document.getElementById('nav').innerHTML=tabs.map(t=>`<button class="${view===t[0]?'active':''}" onclick="setView('${t[0]}')">${t[1]}</button>`).join('');
 }
 function renderToday(late,now,soon,finished){
@@ -362,7 +387,7 @@ function renderToday(late,now,soon,finished){
   html+=groupHtml('Vencidas',late,'red')+groupHtml('Hoy',now,'green')+groupHtml('Siguientes 7 días',soon,'')+(finished.length?groupHtml('Finalizadas hoy',finished,'green'):'');
   document.getElementById('content').innerHTML=html;
 }
-function renderWeek(open){ renderList('Próximos 7 días',open.filter(t=>diff(t.due)>=0 && diff(t.due)<=7)); }
+function renderCycle(title,items,repeats){ renderList(title,items.filter(t=>repeats.includes(t.repeat))); }
 function renderList(title,items){ document.getElementById('content').innerHTML=`<div class="heading"><h2>${title}</h2><span class="count">${items.length} tareas</span></div>${items.length?items.map(taskHtml).join(''):'<div class="empty">No hay tareas aquí.</div>'}`; }
 function groupHtml(name,items,color){
   const shown=expandedGroups.has(name) ? items : items.slice(0,5);
@@ -375,16 +400,23 @@ function taskHtml(t){
   return `<article class="task ${t.done?'done':''} ${!t.done&&diff(t.due)<0?'late':''}">
     <button class="check" aria-label="Marcar realizada" onclick="toggleDone('${key}',${t.done})">${t.done?'✓':''}</button>
     <div class="body"><div class="title">${esc(t.title)}</div><div class="meta"><span class="tag project">${esc(t.project)}</span><span class="tag ${t.priority}">${t.priority==='high'?'Alta':t.priority==='medium'?'Media':'Normal'}</span><span>${dueLabel(t.due)}</span><span>${periodLabel(t)}</span>${t.notes?`<span title="${esc(t.notes)}">Nota</span>`:''}</div></div>
-    <div class="actions">${!t.done&&diff(t.due)<=0?`<button class="icon defer" onclick="deferTask('${key}')">Mañana</button>`:''}${!t.system?`<button class="icon" onclick="editTask('${esc(t.baseId || t.id)}')">Editar</button>`:''}</div>
+    <div class="actions">${!t.done&&diff(t.due)<=0?`<button class="icon defer" onclick="deferTask('${key}')">Mañana</button>`:''}${t.system?`<button class="icon" onclick="editRoutine('${esc(t.baseId)}','${esc(t.project)}')">Editar</button>`:`<button class="icon" onclick="editTask('${esc(t.baseId || t.id)}')">Editar</button>`}</div>
   </article>`;
 }
 function openTask(task){
   document.getElementById('taskForm').reset();
   document.getElementById('taskId').value='';
+  document.getElementById('taskKind').value='custom';
+  document.getElementById('routineBase').value='';
+  document.getElementById('routineProject').value='';
   document.getElementById('taskModalTitle').textContent='Nueva tarea';
   document.getElementById('taskDue').value=iso(today);
   document.getElementById('taskPriority').value='medium';
   document.getElementById('taskProject').value=project==='Todos'?'Global':project;
+  document.getElementById('taskProject').disabled=false;
+  document.getElementById('taskRepeat').disabled=false;
+  document.getElementById('taskDue').disabled=false;
+  document.getElementById('taskHint').textContent='Cada tarea pertenece solo al proyecto elegido. Eliminarla no afecta tareas de otros proyectos.';
   if(task){
     document.getElementById('taskModalTitle').textContent='Editar tarea';
     document.getElementById('taskId').value=task.id;
@@ -398,8 +430,31 @@ function openTask(task){
   document.getElementById('taskOverlay').classList.add('open');
   setTimeout(()=>document.getElementById('taskTitle').focus(),10);
 }
+function editRoutine(id,p){
+  const task=allItems(false).find(t=>t.system && t.baseId===id && t.project===p);
+  if(!task) return;
+  openTask();
+  document.getElementById('taskKind').value='routine';
+  document.getElementById('routineBase').value=id;
+  document.getElementById('routineProject').value=p;
+  document.getElementById('taskModalTitle').textContent='Editar rutina del proyecto';
+  document.getElementById('taskTitle').value=task.title;
+  document.getElementById('taskProject').value=p;
+  document.getElementById('taskDue').value=task.due;
+  document.getElementById('taskPriority').value=task.priority;
+  document.getElementById('taskRepeat').value=task.repeat==='flexible'?'weekly':task.repeat;
+  document.getElementById('taskNotes').value=task.notes || '';
+  document.getElementById('taskProject').disabled=true;
+  document.getElementById('taskRepeat').disabled=true;
+  document.getElementById('taskDue').disabled=task.repeat==='flexible';
+  document.getElementById('taskHint').textContent=task.repeat==='flexible' ? 'Esta rutina flexible conserva su ciclo semanal; puedes cambiar nombre, prioridad y nota solo para este proyecto.' : 'La fecha define cuándo se repetirá en cada nuevo periodo, solo para este proyecto.';
+}
 function saveTask(e){
   e.preventDefault();
+  if(document.getElementById('taskKind').value==='routine'){
+    saveRoutineEdit();
+    return;
+  }
   const id=document.getElementById('taskId').value || uid();
   const item={id,title:document.getElementById('taskTitle').value.trim(),project:document.getElementById('taskProject').value,due:document.getElementById('taskDue').value,priority:document.getElementById('taskPriority').value,repeat:document.getElementById('taskRepeat').value,notes:document.getElementById('taskNotes').value.trim()};
   const index=db.tasks.findIndex(t=>t.id===id);
@@ -407,6 +462,18 @@ function saveTask(e){
   persist(); closeModal('taskOverlay'); toast(index>=0?'Tarea actualizada':'Tarea guardada'); render();
 }
 function editTask(id){ const t=db.tasks.find(item=>item.id===id); if(t) openTask(t); }
+function saveRoutineEdit(){
+  const id=document.getElementById('routineBase').value;
+  const p=document.getElementById('routineProject').value;
+  const current=allItems(false).find(t=>t.system && t.baseId===id && t.project===p);
+  const date=parseDate(document.getElementById('taskDue').value || current.due);
+  const edit={title:document.getElementById('taskTitle').value.trim(),priority:document.getElementById('taskPriority').value,notes:document.getElementById('taskNotes').value.trim()};
+  if(current.repeat==='weekly') edit.weekday=date.getDay();
+  if(current.repeat==='monthly' || current.repeat==='quarterly') edit.day=date.getDate();
+  if(current.repeat==='semiannual'){ edit.month=date.getMonth(); edit.day=date.getDate(); }
+  db.routines[routineKey(id,p)]=edit;
+  persist(); closeModal('taskOverlay'); toast('Rutina actualizada para este proyecto'); render();
+}
 function removeTask(id){
   if(!confirm('¿Eliminar esta tarea creada por ti?')) return;
   db.tasks=db.tasks.filter(t=>t.id!==id); persist(); openManage(); render(); toast('Tarea eliminada');
@@ -429,7 +496,7 @@ function openManage(){
   const owned=db.tasks.filter(t=>t.project===target);
   let personal=owned.length?owned.map(t=>`<div class="manage-row"><div><div class="title">${esc(t.title)}</div><div class="meta">${esc(t.project)} · ${dueLabel(t.due)} · ${periodLabel(t)}</div></div><div><button class="icon" onclick="closeModal('manageOverlay');editTask('${esc(t.id)}')">Editar</button><button class="icon" onclick="removeTask('${esc(t.id)}')">Eliminar</button></div></div>`).join(''):`<div class="empty">No has creado tareas adicionales en ${esc(target)}.</div>`;
   let routines=`<div class="group-title" style="margin-top:22px">Rutinas de ${esc(target)}</div><p style="color:var(--muted);font-size:13px">Ocultar una rutina aquí no afecta a los demás proyectos.</p>`;
-  routines+=catalogForProject(target).map(t=>{ const hidden=db.hidden.includes(hideKey(t[0],target)); return `<div class="manage-row"><div><div class="title">${esc(t[1])}</div><div class="meta">${hidden?'Oculta en este proyecto':'Activa en este proyecto'}</div></div><button class="icon" onclick="toggleTemplate('${t[0]}','${esc(target)}')">${hidden?'Restaurar':'Ocultar'}</button></div>`; }).join('');
+  routines+=catalogForProject(target).map(t=>{ const hidden=db.hidden.includes(hideKey(t[0],target)); return `<div class="manage-row"><div><div class="title">${esc(t[1])}</div><div class="meta">${hidden?'Oculta en este proyecto':'Activa en este proyecto'}</div></div><div>${!hidden?`<button class="icon" onclick="closeModal('manageOverlay');editRoutine('${t[0]}','${esc(target)}')">Editar</button>`:''}<button class="icon" onclick="toggleTemplate('${t[0]}','${esc(target)}')">${hidden?'Restaurar':'Ocultar'}</button></div></div>`; }).join('');
   root.innerHTML=personal+routines;
   document.getElementById('manageOverlay').classList.add('open');
 }
