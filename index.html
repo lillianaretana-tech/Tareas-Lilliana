@@ -52,6 +52,7 @@
       background: var(--bg);
       min-height: 100vh;
       -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
     }
 
     h1, h2, h3 { font-family: 'Fraunces', Georgia, serif; letter-spacing: -.01em; }
@@ -459,6 +460,8 @@
       margin: 0;
       font-size: 1rem;
       line-height: 1.25;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .task-desc {
@@ -466,6 +469,8 @@
       color: var(--muted);
       line-height: 1.38;
       white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .chips {
@@ -481,6 +486,9 @@
       font-weight: 700;
       background: #eef2f0;
       color: #3b454d;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .chip.green { background: var(--soft-green); color: var(--green); }
