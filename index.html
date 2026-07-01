@@ -379,11 +379,11 @@
 
     .filters {
       display: grid;
-      grid-template-columns: 1.2fr .8fr .8fr .8fr;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
       gap: 9px;
       padding: 12px 14px;
       border-bottom: 1px solid var(--line);
-      background: #fbfcfb;
+      background: var(--paper-3);
     }
 
     .stats {
@@ -573,7 +573,7 @@
 
     @media (max-width: 920px) {
       .grid { grid-template-columns: 1fr; }
-      .filters { grid-template-columns: 1fr 1fr; }
+      .filters { grid-template-columns: repeat(2, 1fr); }
       .stats { grid-template-columns: 1fr 1fr; }
     }
 
@@ -743,9 +743,17 @@
             <select id="filterDate">
               <option value="">Todo</option>
               <option value="today">Vence hoy</option>
+              <option value="thisWeek">Esta semana</option>
               <option value="week">Próximos 7 días</option>
+              <option value="thisMonth">Este mes</option>
               <option value="overdue">Vencido</option>
             </select>
+          </label>
+          <label>Desde
+            <input type="date" id="filterFrom">
+          </label>
+          <label>Hasta
+            <input type="date" id="filterTo">
           </label>
         </div>
         <div class="panel-body">
@@ -813,6 +821,8 @@
       filterStatus: document.getElementById("filterStatus"),
       filterProject: document.getElementById("filterProject"),
       filterDate: document.getElementById("filterDate"),
+      filterFrom: document.getElementById("filterFrom"),
+      filterTo: document.getElementById("filterTo"),
       reportDialog: document.getElementById("reportDialog"),
       reportOutput: document.getElementById("reportOutput"),
       toast: document.getElementById("toast"),
@@ -1073,9 +1083,21 @@
       const status = el.filterStatus.value;
       const project = el.filterProject.value;
       const dateView = el.filterDate.value;
+      const from = el.filterFrom.value ? new Date(`${el.filterFrom.value}T00:00:00`) : null;
+      const to = el.filterTo.value ? new Date(`${el.filterTo.value}T23:59:59`) : null;
       const now = new Date();
       const week = new Date();
       week.setDate(now.getDate() + 7);
+
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - now.getDay());
+      startOfWeek.setHours(0, 0, 0, 0);
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 6);
+      endOfWeek.setHours(23, 59, 59, 999);
+
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
       return state.tasks.filter((task) => {
         const blob = [task.title, task.description, task.category, task.audience, task.notes, task.projects.join(" ")].join(" ").toLowerCase();
@@ -1084,8 +1106,12 @@
         if (status && task.status !== status) return false;
         if (project && !task.projects.includes(project) && !task.projects.includes("Todos los proyectos")) return false;
         if (dateView === "today" && !isSameDay(due, now)) return false;
+        if (dateView === "thisWeek" && (due < startOfWeek || due > endOfWeek)) return false;
         if (dateView === "week" && (due < now || due > week)) return false;
+        if (dateView === "thisMonth" && (due < startOfMonth || due > endOfMonth)) return false;
         if (dateView === "overdue" && !(due < now && task.status !== "Completado")) return false;
+        if (from && due < from) return false;
+        if (to && due > to) return false;
         return true;
       }).sort((a, b) => dueDateTime(a) - dueDateTime(b));
     }
@@ -1592,7 +1618,7 @@
       a.click();
       URL.revokeObjectURL(url);
     });
-    [el.search, el.filterStatus, el.filterProject, el.filterDate].forEach((item) => {
+    [el.search, el.filterStatus, el.filterProject, el.filterDate, el.filterFrom, el.filterTo].forEach((item) => {
       item.addEventListener("input", renderTasks);
       item.addEventListener("change", renderTasks);
     });
