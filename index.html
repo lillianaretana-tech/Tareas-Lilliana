@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
   <style>
     :root {
       /* Tinta & Latón — tokens LillyTech */
@@ -618,6 +619,8 @@
         <button id="dashboardBtn" type="button">Ver dashboard</button>
         <button id="reportBtn" class="secondary" type="button">Generar reporte</button>
         <button id="excelBtn" class="secondary" type="button">📊 Exportar Excel</button>
+        <button id="importBtn" class="secondary" type="button">📥 Importar CSV</button>
+        <input id="importFile" type="file" accept=".csv" hidden>
         <button id="pushBtn" class="secondary" type="button">⬆ Subir a Supabase</button>
         <button id="pullBtn" class="secondary" type="button">⬇ Descargar de Supabase</button>
       </div>
@@ -1408,6 +1411,101 @@
       showToast("Excel descargado");
     }
 
+    // ---- Importar CSV de Outlook (calendario) ----
+    const OUTLOOK_FIELD_ALIASES = {
+      title: ["Subject", "Asunto", "Título"],
+      description: ["Description", "Descripción", "Notas"],
+      startDate: ["Start Date", "Fecha de inicio", "Fecha inicio"],
+      startTime: ["Start Time", "Hora de inicio", "Hora inicio"],
+      location: ["Location", "Ubicación", "Lugar"]
+    };
+
+    function pickField(row, aliases) {
+      for (const key of Object.keys(row)) {
+        const clean = key.trim();
+        if (aliases.some((alias) => alias.toLowerCase() === clean.toLowerCase())) {
+          return (row[key] || "").trim();
+        }
+      }
+      return "";
+    }
+
+    function normalizeImportedDate(raw) {
+      if (!raw) return todayIso();
+      const value = raw.trim();
+      // YYYY-MM-DD ya viene bien
+      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+      // DD/MM/YYYY o MM/DD/YYYY (Outlook exporta según el idioma del sistema; CR usa DD/MM/YYYY)
+      const slash = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (slash) {
+        let [, a, b, year] = slash;
+        let day = Number(a), month = Number(b);
+        // Si el primer número es mayor a 12, es DD/MM. Si no, asumimos DD/MM (locale CR) salvo que el segundo también sea >12.
+        if (day > 12 && month <= 12) { /* ya está bien: DD/MM */ }
+        else if (month > 12 && day <= 12) { [day, month] = [month, day]; }
+        return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      }
+      const parsed = new Date(value);
+      if (!isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+      return todayIso();
+    }
+
+    function normalizeImportedTime(raw) {
+      if (!raw) return "";
+      const value = raw.trim().toLowerCase().replace(/\./g, "");
+      const match = value.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(a\.?\s*m\.?|p\.?\s*m\.?|am|pm)?$/i);
+      if (!match) return "";
+      let [, h, m, ampm] = match;
+      let hour = Number(h);
+      if (ampm) {
+        const isPm = ampm.replace(/\s|\./g, "").startsWith("p");
+        if (isPm && hour < 12) hour += 12;
+        if (!isPm && hour === 12) hour = 0;
+      }
+      return `${String(hour).padStart(2, "0")}:${m}`;
+    }
+
+    function rowToImportedTask(row) {
+      const title = pickField(row, OUTLOOK_FIELD_ALIASES.title);
+      if (!title) return null;
+      const description = pickField(row, OUTLOOK_FIELD_ALIASES.description);
+      const location = pickField(row, OUTLOOK_FIELD_ALIASES.location);
+      return {
+        id: makeId(),
+        title,
+        description: [description, location ? `Lugar: ${location}` : ""].filter(Boolean).join("\n"),
+        category: "Cliente",
+        audience: "Para mí",
+        dueDate: normalizeImportedDate(pickField(row, OUTLOOK_FIELD_ALIASES.startDate)),
+        dueTime: normalizeImportedTime(pickField(row, OUTLOOK_FIELD_ALIASES.startTime)),
+        priority: "Media",
+        status: "Pendiente",
+        progress: 0,
+        projects: ["Todos los proyectos"],
+        notes: "Importado de Outlook",
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    function importOutlookCsv(file) {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          const imported = results.data.map(rowToImportedTask).filter(Boolean);
+          if (!imported.length) {
+            showToast("No se encontraron eventos con título en ese CSV");
+            return;
+          }
+          state.tasks.push(...imported);
+          saveState();
+          renderTasks();
+          showToast(`${imported.length} tarea(s) importada(s) de Outlook`);
+        },
+        error: (error) => showToast(`Error al leer el CSV: ${error.message}`)
+      });
+    }
+
     el.form.addEventListener("submit", (event) => {
       event.preventDefault();
       const task = collectForm();
@@ -1452,6 +1550,14 @@
       } catch (error) {
         showToast(`Error al generar Excel: ${error.message}`);
       }
+    });
+    document.getElementById("importBtn").addEventListener("click", () => {
+      document.getElementById("importFile").click();
+    });
+    document.getElementById("importFile").addEventListener("change", (event) => {
+      const file = event.target.files[0];
+      if (file) importOutlookCsv(file);
+      event.target.value = "";
     });
     document.getElementById("pushBtn").addEventListener("click", async () => {
       try {
