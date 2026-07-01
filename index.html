@@ -1174,9 +1174,22 @@
             <button type="button" onclick="completeTask('${task.id}')">Completar</button>
             <button type="button" class="icon danger" title="Eliminar" onclick="deleteTask('${task.id}')">x</button>
           </div>
+          ${task.notes && task.notes.includes("Importado de Outlook") ? `<button type="button" class="ghost" style="width:100%;font-size:.8rem;" onclick="deleteAllLikeThis('${task.id}')">🧹 Borrar todas las repetidas de "${escapeHtml(task.title)}"</button>` : ""}
         </article>
       `).join("");
     }
+
+    window.deleteAllLikeThis = function(id) {
+      const ref = state.tasks.find((item) => item.id === id);
+      if (!ref) return;
+      const key = ref.title.trim().toLowerCase();
+      const matches = state.tasks.filter((item) => item.title.trim().toLowerCase() === key);
+      if (!confirm(`¿Eliminar las ${matches.length} tarea(s) llamadas "${ref.title}"? Esto no se puede deshacer.`)) return;
+      state.tasks = state.tasks.filter((item) => item.title.trim().toLowerCase() !== key);
+      saveState();
+      renderTasks();
+      showToast(`${matches.length} tarea(s) repetida(s) eliminada(s)`);
+    };
 
     function collectForm() {
       const progress = el.status.value === "Completado" ? 100 : Number(el.progress.value);
