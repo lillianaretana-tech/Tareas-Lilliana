@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
   <style>
     :root {
       /* Tinta & Latón — tokens LillyTech */
@@ -616,6 +617,7 @@
       <div class="main-actions">
         <button id="dashboardBtn" type="button">Ver dashboard</button>
         <button id="reportBtn" class="secondary" type="button">Generar reporte</button>
+        <button id="excelBtn" class="secondary" type="button">📊 Exportar Excel</button>
         <button id="pushBtn" class="secondary" type="button">⬆ Subir a Supabase</button>
         <button id="pullBtn" class="secondary" type="button">⬇ Descargar de Supabase</button>
       </div>
@@ -1233,6 +1235,179 @@
       return lines.join("\n");
     }
 
+    // ---- Exportación a Excel con formato (ExcelJS) ----
+    const XLSX_COLORS = {
+      headerBg: "FF0E1220",
+      headerTx: "FFFFFFFF",
+      brass: "FFC39A45",
+      brassSoft: "FFE6CE8C",
+      sageSoft: "FFDDEBE2",
+      rustSoft: "FFF2DED7",
+      line: "FFE0DACB",
+      tx: "FF1B2233"
+    };
+
+    function rowFillForTask(task) {
+      const tone = taskTone(task);
+      if (tone === "done") return XLSX_COLORS.sageSoft;
+      if (tone === "overdue") return XLSX_COLORS.rustSoft;
+      if (tone === "today") return XLSX_COLORS.brassSoft;
+      return null;
+    }
+
+    const TASK_COLUMNS = [
+      { header: "Título", key: "title", width: 30 },
+      { header: "Descripción", key: "description", width: 36 },
+      { header: "Tipo", key: "category", width: 16 },
+      { header: "Para quién", key: "audience", width: 16 },
+      { header: "Fecha límite", key: "dueDate", width: 13 },
+      { header: "Hora", key: "dueTime", width: 8 },
+      { header: "Prioridad", key: "priority", width: 10 },
+      { header: "Estado", key: "status", width: 13 },
+      { header: "Avance %", key: "progress", width: 10 },
+      { header: "Proyectos", key: "projectsLabel", width: 24 },
+      { header: "Notas", key: "notes", width: 32 },
+      { header: "Última actualización", key: "updatedLabel", width: 18 }
+    ];
+
+    function taskRow(task) {
+      return {
+        title: task.title,
+        description: task.description || "",
+        category: task.category,
+        audience: task.audience,
+        dueDate: task.dueDate,
+        dueTime: task.dueTime || "",
+        priority: task.priority,
+        status: task.status,
+        progress: Number(task.progress || 0) / 100,
+        projectsLabel: task.projects.join(", "),
+        notes: task.notes || "",
+        updatedLabel: task.updatedAt ? new Date(task.updatedAt).toLocaleString("es-CR") : ""
+      };
+    }
+
+    function styleTaskSheet(sheet, tasks) {
+      sheet.columns = TASK_COLUMNS;
+      sheet.getRow(1).eachCell((cell) => {
+        cell.font = { name: "Calibri", bold: true, color: { argb: XLSX_COLORS.headerTx } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.headerBg } };
+        cell.alignment = { vertical: "middle" };
+      });
+      sheet.views = [{ state: "frozen", ySplit: 1 }];
+      sheet.autoFilter = { from: "A1", to: `${String.fromCharCode(64 + TASK_COLUMNS.length)}1` };
+
+      tasks.forEach((task) => {
+        const row = sheet.addRow(taskRow(task));
+        const fill = rowFillForTask(task);
+        row.eachCell((cell, colNumber) => {
+          cell.font = { name: "Calibri", size: 11, color: { argb: XLSX_COLORS.tx } };
+          cell.border = { bottom: { style: "thin", color: { argb: XLSX_COLORS.line } } };
+          cell.alignment = { vertical: "top", wrapText: colNumber === 2 || colNumber === 11 };
+          if (fill) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
+          if (TASK_COLUMNS[colNumber - 1].key === "progress") cell.numFmt = "0%";
+        });
+      });
+      sheet.getColumn("progress").alignment = { horizontal: "center", vertical: "top" };
+    }
+
+    function addSummarySheet(workbook, tasks) {
+      const sheet = workbook.addWorksheet("Resumen");
+      sheet.mergeCells("A1:D1");
+      sheet.getCell("A1").value = "Control diario de Facilities — Resumen";
+      sheet.getCell("A1").font = { name: "Calibri", bold: true, size: 16, color: { argb: XLSX_COLORS.tx } };
+      sheet.getCell("A2").value = `Generado: ${new Date().toLocaleString("es-CR")}`;
+      sheet.getCell("A2").font = { name: "Calibri", italic: true, size: 10, color: { argb: "FF5A6275" } };
+
+      const total = tasks.length;
+      const done = tasks.filter((t) => t.status === "Completado").length;
+      const overdue = tasks.filter((t) => taskTone(t) === "overdue").length;
+      const today = tasks.filter((t) => taskTone(t) === "today").length;
+      const avg = total ? Math.round(tasks.reduce((sum, t) => sum + Number(t.progress || 0), 0) / total) : 0;
+
+      const stats = [
+        ["Total de obligaciones", total],
+        ["Completadas", done],
+        ["Vencidas", overdue],
+        ["Vencen hoy", today],
+        ["Avance promedio", `${avg}%`]
+      ];
+      let r = 4;
+      stats.forEach(([label, value]) => {
+        sheet.getCell(`A${r}`).value = label;
+        sheet.getCell(`A${r}`).font = { name: "Calibri", bold: true };
+        sheet.getCell(`B${r}`).value = value;
+        r++;
+      });
+
+      r += 1;
+      sheet.getCell(`A${r}`).value = "Por proyecto";
+      sheet.getCell(`A${r}`).font = { name: "Calibri", bold: true, size: 13 };
+      r++;
+      const headerRow = sheet.getRow(r);
+      ["Proyecto", "Total", "Completadas", "Vencidas", "Avance promedio"].forEach((label, i) => {
+        const cell = headerRow.getCell(i + 1);
+        cell.value = label;
+        cell.font = { name: "Calibri", bold: true, color: { argb: XLSX_COLORS.headerTx } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.headerBg } };
+      });
+      r++;
+      state.projects.filter((p) => p !== "Todos los proyectos").forEach((project) => {
+        const projectTasks = tasks.filter((t) => t.projects.includes(project));
+        const pTotal = projectTasks.length;
+        const pDone = projectTasks.filter((t) => t.status === "Completado").length;
+        const pOverdue = projectTasks.filter((t) => taskTone(t) === "overdue").length;
+        const pAvg = pTotal ? Math.round(projectTasks.reduce((sum, t) => sum + Number(t.progress || 0), 0) / pTotal) : 0;
+        sheet.getRow(r).values = [project, pTotal, pDone, pOverdue, `${pAvg}%`];
+        r++;
+      });
+
+      sheet.getColumn(1).width = 30;
+      sheet.getColumn(2).width = 14;
+      sheet.getColumn(3).width = 14;
+      sheet.getColumn(4).width = 14;
+      sheet.getColumn(5).width = 16;
+    }
+
+    function safeSheetName(name) {
+      return name.replace(/[\\\/\?\*\[\]:]/g, "-").slice(0, 31) || "Proyecto";
+    }
+
+    async function exportExcel() {
+      if (!window.ExcelJS) { showToast("No se pudo cargar el generador de Excel"); return; }
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "LillyTech";
+      workbook.created = new Date();
+
+      const allTasks = [...state.tasks].sort((a, b) => dueDateTime(a) - dueDateTime(b));
+      addSummarySheet(workbook, allTasks);
+
+      const todasSheet = workbook.addWorksheet("Todas");
+      styleTaskSheet(todasSheet, allTasks);
+
+      const usedNames = new Set(["Resumen", "Todas"]);
+      state.projects.filter((p) => p !== "Todos los proyectos").forEach((project) => {
+        const projectTasks = allTasks.filter((t) => t.projects.includes(project));
+        if (!projectTasks.length) return;
+        let name = safeSheetName(project);
+        let suffix = 2;
+        while (usedNames.has(name)) { name = `${safeSheetName(project).slice(0, 28)} ${suffix++}`; }
+        usedNames.add(name);
+        const sheet = workbook.addWorksheet(name);
+        styleTaskSheet(sheet, projectTasks);
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `facilities_${todayIso()}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast("Excel descargado");
+    }
+
     el.form.addEventListener("submit", (event) => {
       event.preventDefault();
       const task = collectForm();
@@ -1270,6 +1445,13 @@
     document.getElementById("reportBtn").addEventListener("click", () => {
       el.reportOutput.textContent = buildReport();
       el.reportDialog.showModal();
+    });
+    document.getElementById("excelBtn").addEventListener("click", async () => {
+      try {
+        await exportExcel();
+      } catch (error) {
+        showToast(`Error al generar Excel: ${error.message}`);
+      }
     });
     document.getElementById("pushBtn").addEventListener("click", async () => {
       try {
